@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>入退室スキャナー</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1a1a;
+    color: white;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 { font-size: 20px; margin-bottom: 16px; }
+  #videoWrap {
+    position: relative;
+    width: 100%;
+    max-width: 400px;
+  }
+  video {
+    width: 100%;
+    border-radius: 12px;
+    display: block;
+  }
+  #overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 200px;
+    height: 200px;
+    border: 3px solid #4ade80;
+    border-radius: 12px;
+    pointer-events: none;
+  }
+  #status {
+    margin-top: 20px;
+    font-size: 18px;
+    text-align: center;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #status.success { color: #4ade80; font-weight: bold; font-size: 22px; }
+  #status.error { color: #f87171; }
+  #status.waiting { color: #aaa; }
+  #camBtn {
+    margin-top: 16px;
+    padding: 10px 24px;
+    background: #4285f4;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  canvas { display: none; }
+</style>
+</head>
+<body>
+<h1>入退室スキャナー</h1>
+<div id="videoWrap">
+  <video id="video" autoplay playsinline muted></video>
+  <div id="overlay"></div>
+</div>
+<canvas id="canvas"></canvas>
+<div id="status" class="waiting">QRコードをかざしてください</div>
+<button id="camBtn" onclick="switchCamera()">カメラ切替</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+  var video = document.getElementById('video');
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d');
+  var status = document.getElementById('status');
+  var stream = null;
+  var scanning = true;
+  var facingMode = 'user';
+
+  function startCamera() {
+    if (stream) {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+    }
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facingMode }
+    }).then(function(s) {
+      stream = s;
+      video.srcObject = s;
+      video.play();
+      requestAnimationFrame(scan);
+    }).catch(function(err) {
+      status.textContent = 'カメラのアクセスを許可してください';
+      status.className = 'error';
+    });
+  }
+
+  function switchCamera() {
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    scanning = true;
+    status.textContent = 'QRコードをかざしてください';
+    status.className = 'waiting';
+    startCamera();
+  }
+
+  function scan() {
+    if (!scanning) { requestAnimationFrame(scan); return; }
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code) {
+        var url = code.data;
+        if (url.indexOf('formResponse') !== -1) {
+          scanning = false;
+          sendForm(url);
+        }
+      }
+    }
+    requestAnimationFrame(scan);
+  }
+
+  function sendForm(url) {
+    status.textContent = '送信中...';
+    status.className = 'waiting';
+    fetch(url, { method: 'GET', mode: 'no-cors' })
+      .then(function() {
+        var match = url.match(/entry\.[0-9]+=([^&]+)/);
+        var name = match ? decodeURIComponent(match[1]) : '';
+        status.innerHTML = name + '<br>記録しました！';
+        status.className = 'success';
+        setTimeout(function() {
+          scanning = true;
+          status.textContent = 'QRコードをかざしてください';
+          status.className = 'waiting';
+        }, 2000);
+      })
+      .catch(function() {
+        status.textContent = 'エラー。もう一度試してください';
+        status.className = 'error';
+        setTimeout(function() {
+          scanning = true;
+          status.textContent = 'QRコードをかざしてください';
+          status.className = 'waiting';
+        }, 2000);
+      });
+  }
+
+  startCamera();
+</script>
+</body>
+</html>
