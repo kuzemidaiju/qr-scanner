@@ -83,14 +83,14 @@
   var statusEl = document.getElementById('status');
   var stream = null;
   var scanning = true;
-  var facingMode = 'user';
+  var facingMode = 'environment';
   var jsQRLoaded = false;
 
-  // jsQRを読み込む
   var script = document.createElement('script');
   script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
   script.onload = function() {
     jsQRLoaded = true;
+    statusEl.textContent = 'QRコードをかざしてください';
   };
   script.onerror = function() {
     statusEl.textContent = 'ライブラリ読み込みエラー。再読み込みしてください。';
@@ -103,14 +103,14 @@
       stream.getTracks().forEach(function(t) { t.stop(); });
     }
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
+      video: { facingMode: facingMode }
     }).then(function(s) {
       stream = s;
       video.srcObject = s;
       video.play();
       requestAnimationFrame(scan);
     }).catch(function(err) {
-      statusEl.textContent = 'カメラのアクセスを許可してください';
+      statusEl.textContent = 'カメラのアクセスを許可してください: ' + err.message;
       statusEl.className = 'error';
     });
   }
@@ -118,13 +118,17 @@
   function switchCamera() {
     facingMode = facingMode === 'user' ? 'environment' : 'user';
     scanning = true;
-    statusEl.textContent = 'QRコードをかざしてください';
+    statusEl.textContent = 'カメラ切替中...';
     statusEl.className = 'waiting';
     startCamera();
   }
 
   function scan() {
-    if (!scanning || !jsQRLoaded) {
+    if (!jsQRLoaded) {
+      requestAnimationFrame(scan);
+      return;
+    }
+    if (!scanning) {
       requestAnimationFrame(scan);
       return;
     }
