@@ -51,8 +51,8 @@
   #status.success { color: #4ade80; font-weight: bold; font-size: 22px; }
   #status.error { color: #f87171; }
   #status.waiting { color: #aaa; }
-  #camBtn {
-    margin-top: 16px;
+  .btns { display: flex; gap: 10px; margin-top: 16px; }
+  button {
     padding: 10px 24px;
     background: #4285f4;
     color: white;
@@ -72,52 +72,71 @@
 </div>
 <canvas id="canvas"></canvas>
 <div id="status" class="waiting">QRコードをかざしてください</div>
-<button id="camBtn" onclick="switchCamera()">カメラ切替</button>
+<div class="btns">
+  <button onclick="switchCamera()">カメラ切替</button>
+</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script>
   var video = document.getElementById('video');
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d');
-  var status = document.getElementById('status');
+  var statusEl = document.getElementById('status');
   var stream = null;
   var scanning = true;
   var facingMode = 'user';
+  var jsQRLoaded = false;
+
+  // jsQRを読み込む
+  var script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+  script.onload = function() {
+    jsQRLoaded = true;
+  };
+  script.onerror = function() {
+    statusEl.textContent = 'ライブラリ読み込みエラー。再読み込みしてください。';
+    statusEl.className = 'error';
+  };
+  document.head.appendChild(script);
 
   function startCamera() {
     if (stream) {
       stream.getTracks().forEach(function(t) { t.stop(); });
     }
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facingMode }
+      video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
     }).then(function(s) {
       stream = s;
       video.srcObject = s;
       video.play();
       requestAnimationFrame(scan);
     }).catch(function(err) {
-      status.textContent = 'カメラのアクセスを許可してください';
-      status.className = 'error';
+      statusEl.textContent = 'カメラのアクセスを許可してください';
+      statusEl.className = 'error';
     });
   }
 
   function switchCamera() {
     facingMode = facingMode === 'user' ? 'environment' : 'user';
     scanning = true;
-    status.textContent = 'QRコードをかざしてください';
-    status.className = 'waiting';
+    statusEl.textContent = 'QRコードをかざしてください';
+    statusEl.className = 'waiting';
     startCamera();
   }
 
   function scan() {
-    if (!scanning) { requestAnimationFrame(scan); return; }
+    if (!scanning || !jsQRLoaded) {
+      requestAnimationFrame(scan);
+      return;
+    }
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      var code = jsQR(imageData.data, imageData.width, imageData.height);
-      if (code) {
+      var code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert'
+      });
+      if (code && code.data) {
         var url = code.data;
         if (url.indexOf('formResponse') !== -1) {
           scanning = false;
@@ -129,27 +148,27 @@
   }
 
   function sendForm(url) {
-    status.textContent = '送信中...';
-    status.className = 'waiting';
+    statusEl.textContent = '送信中...';
+    statusEl.className = 'waiting';
     fetch(url, { method: 'GET', mode: 'no-cors' })
       .then(function() {
         var match = url.match(/entry\.[0-9]+=([^&]+)/);
         var name = match ? decodeURIComponent(match[1]) : '';
-        status.innerHTML = name + '<br>記録しました！';
-        status.className = 'success';
+        statusEl.innerHTML = name + '<br>✅ 記録しました！';
+        statusEl.className = 'success';
         setTimeout(function() {
           scanning = true;
-          status.textContent = 'QRコードをかざしてください';
-          status.className = 'waiting';
+          statusEl.textContent = 'QRコードをかざしてください';
+          statusEl.className = 'waiting';
         }, 2000);
       })
       .catch(function() {
-        status.textContent = 'エラー。もう一度試してください';
-        status.className = 'error';
+        statusEl.textContent = 'エラー。もう一度試してください';
+        statusEl.className = 'error';
         setTimeout(function() {
           scanning = true;
-          status.textContent = 'QRコードをかざしてください';
-          status.className = 'waiting';
+          statusEl.textContent = 'QRコードをかざしてください';
+          statusEl.className = 'waiting';
         }, 2000);
       });
   }
